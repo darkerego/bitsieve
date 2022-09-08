@@ -149,11 +149,6 @@ the highest, use `--reverse`. To supply an mqtt daemon other than localhost, use
 This is an incomplete list of the possible settings, I will write documentation for the rest when I get a chance. 
 </p>
 
-# bitsieve
-============
-
-a high performance market analysis framework
-
 
 ### Custom Indicators
 
