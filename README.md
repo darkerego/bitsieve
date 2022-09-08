@@ -16,6 +16,7 @@ Special thanks to the developers of the unicorn-binance-websocket API tool, as t
 without it.
 </p>
 
+![alt text](img/demo.png "Bitsieve")
 
 
 ### Methodology

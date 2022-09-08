@@ -261,7 +261,7 @@ class Strategy:
                 if float(current) > float(last):
                     diff = diff * -1
             if last_sig.Signal == signal:
-                self.cp.white(f'Current Ticker: {current}, Price at open: {last}, PNL if closed now: {diff} %')
+                self.cp.white(f'[~] Current Ticker: {current}, Price at open: {last}, PNL if closed now: {diff} %')
                 last_sig.update_pnl(diff, score, adx_avg)
                 # print('Signal Open!')
             else:
@@ -597,7 +597,7 @@ class Strategy:
         """
         Turn FTX intervals into human friendly time periods
         """
-        self._print(f'Analysis on {market}, {_period}')
+        self._print(f'[⚂] Analysis on {market}, {_period}')
 
         # long_score = 0
         # short_score = 0
@@ -608,11 +608,11 @@ class Strategy:
 
         # bop = self.balance_of_power()
         macdret, rogo = self.generate_macd(close_array, new_time)
-        self._print(f'MACD: {macdret}, {rogo}')
+        self._print(f'[⚂] MACD: {macdret}, {rogo}')
 
         bop_ret = talib.BOP(open_array_, high_array_, low_array_, close_array_)
         bop_ret = pd.DataFrame.from_dict(bop_ret[:1]).values.tolist()[0][0]
-        self.cp.white(f'BOP:{bop_ret}')
+        self.cp.white(f'[⚂] BOP:{bop_ret}')
         adx_val = self.adx(high_array_, low_array_, close_array_)
         # print(pd.DataFrame.from_dict(adx_val[:1500]).values.tolist())
         adx_val = pd.DataFrame.from_dict(adx_val[:500]).values.tolist()[499][0]
@@ -621,20 +621,18 @@ class Strategy:
             pl = {'market': market, 'roc': roc_val}
             mq.mqPublish(payload=pl, topic='/roc')"""
 
-        self.cp.purple(f'ADX: {adx_val}')
+        self.cp.purple(f'[⚂] ADX: {adx_val}')
 
-        self._print('Calculating sar ... ')
+        self._print('[⚂]Calculating sar ... ')
         sar = self.generate_sar(high_array, low_array, market=market)
-        self._print(f'sar {sar}')
+        self._print(f'[⚂] SAR {sar}')
         if not sar:
             return 0, 0, 0
-        self._print('Get RSI')
         rsi = self.generate_rsi(close_array=close_array_)
-
-        self._print(f'RSI: {rsi}')
+        self._print(f'[⚂] RSI: {rsi}')
         ema_long = self.exponential_moving_average(close_array, n=26)
         ema_short = self.exponential_moving_average(close_array, n=9)
-        self.cp.white(f'EMA: {ema_long}, {ema_short}')
+        self.cp.white(f'[⚂] EMA: {ema_long}, {ema_short}')
 
         return rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short
 
@@ -662,7 +660,7 @@ class Strategy:
         elif ema_short < ema_long:
             score -= 1
 
-        self.cp.red(f'Analysis on {market} for {_period}:, {score}, {adx_val}')
+        self.cp.red(f'[⋄] Analysis on {market} for {_period}:, {score}, {adx_val}')
         return score, adx_val, sar
 
     def calculate_score(self, market):
@@ -699,15 +697,15 @@ class Strategy:
             adx_max += psecs * 100
             adx_mean += adx * psecs
             # adx_mean += adx
-            self._print(f'Non weighed score: {total_score}, ADX: {adx}')
+            self._print(f'[⋄] Non weighed score: {total_score}, ADX: {adx}')
 
             highest_score += (psecs * len(self.indicators))
             weighted_score += (score * psecs)
-            self.cp.yellow(f'Weighted Score: {period}:{psecs}: {weighted_score}')
+            self.cp.yellow(f'[⋄] Weighted Score: {period}:{psecs}: {weighted_score}')
         # weighted_score = weighted_score / len(self.periods)
         score_pct = self.percent(weighted_score, highest_score)
         adx_avg = self.percent(adx_mean, adx_max)
-        self.cp.red(f'Weighted Score: {weighted_score} / Highest Possible: {highest_score} ')
+        self.cp.red(f'[⋄] Weighted Score: {weighted_score} / Highest Possible: {highest_score} ')
 
         self.cp.white(data='Calculating weighted score!')
         if weighted_score > 0:
@@ -727,11 +725,11 @@ class Strategy:
         elif weighted_score == 0:
             analysis = 'NEUTRAL'
         if analysis == 'LONG':
-            self.cp.green(f'📉 Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
+            self.cp.green(f'🔺 Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
         elif analysis == 'SHORT':
-            self.cp.red(f'📈 Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
+            self.cp.red(f'🔻 Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
         else:
-            self.cp.yellow(f'🚫 Finished: score: {analysis}')
+            self.cp.yellow(f'🔸 Finished: score: {analysis}')
             score_pct = 0
         self.forward_tester(signal=analysis, market=market, score=score_pct, adx_avg=adx_avg)
         score_pct = round(score_pct, 2)
@@ -747,7 +745,7 @@ class Strategy:
 
 def interactive():
     cp = ColorPrint()
-    cp.white('This shit is fucking ridiculous!')
+    cp.white('[⋄] This shit is fucking ridiculous!')
     markets = market_enumeration.InteractiveArgs()
     markets = markets.interactive_calL()
     strategy = Strategy(markets, periods=['1m', '5m', '30m', '1h', '4h', '6h', '12h'], quiet=args.quiet)
@@ -770,7 +768,7 @@ def main(args):
 
     # state = State()
     cp = ColorPrint()
-    cp.white('💰 Lets find some unicorns!')
+    cp.white('[💰] Lets find some unicorns!')
     # market = sys.argv[1]
     # print('Market', market)
 
@@ -807,7 +805,7 @@ def main(args):
     strategy = Strategy(state.markets, periods=periods, quiet=args.quiet)
     while state.running:
         if time.time() - state.start_time > 900:
-            print('Enumerating markets again ... ')
+            print('[⋄] Enumerating markets again ... ')
             enum_markets()
 
         for m in state.markets:
@@ -822,7 +820,7 @@ def main(args):
                     print(err)
                 else:
                     if not args.quiet:
-                        cp.red(f'{signal_}, {score}, {m}')
+                        cp.red(f'[~] {signal_}, {score}, {m}')
                     sleep(0.125)
 
 
@@ -854,4 +852,4 @@ if __name__ == '__main__':
             main(args)
         finally:
             restarts += 1
-            print(f'[+] Starting .. {restarts}')
+            print(f'[⋄] Starting .. {restarts}')
