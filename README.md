@@ -174,9 +174,9 @@ exchange will simply take it all.
 </p>
 
 <p>
-<b>
-Find this useful? Consider supporting development: </b>
-BTC:3KD3sKiGSyipijVVJ8jVyLYeRDkkTKzKct
-ETH:0x0f7274f04d47c5A7cd08AF848e809396ef6B08A5
+<b><br>
+Find this useful? Consider supporting development: </b><br>
+BTC:3KD3sKiGSyipijVVJ8jVyLYeRDkkTKzKct<br>
+ETH:0x0f7274f04d47c5A7cd08AF848e809396ef6B08A5<br>
 
 </p>
