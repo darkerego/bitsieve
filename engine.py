@@ -35,12 +35,21 @@ cp = ColorPrint()
 
 signal_que = {}
 period_map = [(60, '1m'), (180, '3m'), (300, '5m'), (900, '15m'), (1800, '30m'), (3600, '1h'), (7200, '2h'),
-              (14400, '4h'), (21600, '6h'), (43200, '12h'), (86400, '1d')]
+              (14400, '4h'), (21600, '6h'), (43200, '12h'), (86400, '1d'), (259200, '3d'), (604800, '1w'),
+              (2592000, '1M')]
 
 
 class Settings:
     min_score = 30
     min_adx = 20
+    roc_periods = []
+    volume_spike_periods = []
+    debug = False
+    ema_cross_1 = [26, 9]
+    ema_cross_2 = [200, 50]
+    vsd_window = 26
+    adx_window = 14
+
 
 
 logging.basicConfig(
@@ -78,7 +87,7 @@ class BadReversal:
 
 class CurrentSig:
 
-    def __init__(self, instrument, signal, score, entry=None, _exit=None, adx_avg=0, periods=[]):
+    def __init__(self, instrument, signal, score, entry=None, _exit=None, adx_avg=0, periods=[], events=[]):
         self.Lowest_pnl = None
         self.logger = logging.getLogger(__name__)
         self.sql = sql_lib.SQLLiteConnection(dbname='kline.sqlite')
@@ -99,6 +108,7 @@ class CurrentSig:
         self.Current_analysis = {}
         self.ROC = {}
         self.PNL = 0.0
+        self.Events = events
         self.open(signal, score, entry)
 
     def open(self, signal, score, entry):
@@ -114,10 +124,10 @@ class CurrentSig:
         self.Lowest_PNL = 0.0
         self.Status = 'open'
         self.Current_analysis = {'Signal': self.Signal, 'Status': self.Status, 'Instrument': self.Instrument,
-                                 'Score': self.Score, 'Mean_Adx': self.adx_avg, 'Periods': self.periods,
-                                 'Open_time': self.Open_time, 'Entry': self.Entry, 'Exit': self.Exit,
-                                 'Closed_at': self.Closed_at, 'PNL': self.Pnl, 'Highest_PNL': self.Highest_PNL,
-                                 'Lowest_PNL': self.Lowest_PNL, 'Live_score': self.Live_score}
+                                 'Score': self.Score, 'Live_score': self.Live_score, 'Mean_Adx': self.adx_avg,
+                                 'Periods': self.periods, 'Open_time': self.Open_time, 'Entry': self.Entry,
+                                 'Exit': self.Exit, 'Closed_at': self.Closed_at, 'PNL': self.Pnl,
+                                 'Highest_PNL': self.Highest_PNL, 'Lowest_PNL': self.Lowest_PNL, 'Events': self.Events}
 
         self.publish(topic=f'/signals')
         self.publish(topic=f'/stream')
@@ -164,10 +174,11 @@ class CurrentSig:
     def update_fields(self, field, data):
         self.Current_analysis.update({field: data})
 
-    def update_pnl(self, pnl, score, adx_avg):
+    def update_pnl(self, pnl, score, adx_avg, events):
         self.Current_analysis.update({"PNL": pnl})
         self.Current_analysis.update({'Live_score': score})
         self.Current_analysis.update({'Mean_Adx': adx_avg})
+        self.Current_analysis.update({'Events': events})
         if pnl > self.Highest_PNL:
             self.Highest_PNL = pnl
             self.Current_analysis.update({'Highest_PNL': self.Highest_PNL})
@@ -190,6 +201,7 @@ class CurrentSig:
                      'Live_score': round(float(self.Live_score), 2),
                      'Mean_Adx': round(float(self.adx_avg), 2),
                      'Periods': self.periods,
+                     'Events': self.Events,
                      'Open_time': self.Open_time,
                      'Entry': round(float(self.Entry), 4),
                      'Exit': round(float(self.Exit), 4),
@@ -237,7 +249,7 @@ class Strategy:
         self.pandas_ind = PandasIndicators()
         # self.sql = sql_lib.SQLLiteConnection()
 
-    def forward_tester(self, signal, market, score, adx_avg):
+    def forward_tester(self, signal, market, score, adx_avg, events=[]):
         """
         {'signal': {'signal': 'NEUTRAL', 'status': None, 'instrument': None, 'open_time': 0.0, 'Entry': 0.0, 'Exit': 0.0, 'closed_at': 0.0}}
         """
@@ -262,7 +274,7 @@ class Strategy:
                     diff = diff * -1
             if last_sig.Signal == signal:
                 self.cp.white(f'[~] Current Ticker: {current}, Price at open: {last}, PNL if closed now: {diff} %')
-                last_sig.update_pnl(diff, score, adx_avg)
+                last_sig.update_pnl(diff, score, adx_avg, events)
                 # print('Signal Open!')
             else:
                 # print('Signal Changed!')
@@ -270,24 +282,27 @@ class Strategy:
                     # print('Closing ....')
                     if last_sig.close(exit_price=current_tick, pnl=diff):
                         sig = CurrentSig(instrument=market, signal=signal, score=score,
-                                         entry=self.future_ticker(instrument=market))
+                                         entry=self.future_ticker(instrument=market),
+                                         events=events)
                         signal_que.update({market: {'object': sig, 'json': sig.Current_analysis}})
 
                 else:
                     self.logger.info(f'Reversing signal on {market} to {signal}')
                     if last_sig.reverse(entry_price=current_tick, score=score, pnl=diff):
                         sig = CurrentSig(instrument=market, signal=signal, score=score,
-                                         entry=self.future_ticker(instrument=market), periods=self.periods)
+                                         entry=self.future_ticker(instrument=market), periods=self.periods,
+                                         events=events)
                         signal_que.update({market: {'object': sig, 'json': sig.Current_analysis}})
 
         else:
-            if signal != 'NEUTRAL':
-                print('Initialize new signal ... ')
-                sig = CurrentSig(instrument=market, signal=signal, score=score, adx_avg=adx_avg,
-                                 entry=self.future_ticker(instrument=market), periods=self.periods)
-                signal_que.update({market: {'object': sig, 'json': sig.Current_analysis}})
+            # if signal != 'NEUTRAL':
+            print('Initialize new signal ... ')
+            sig = CurrentSig(instrument=market, signal=signal, score=score, adx_avg=adx_avg,
+                             entry=self.future_ticker(instrument=market), periods=self.periods,
+                             events=events)
+            signal_que.update({market: {'object': sig, 'json': sig.Current_analysis}})
 
-                return
+            return
 
     def _print(self, data):
         if self.quiet:
@@ -371,15 +386,25 @@ class Strategy:
         return MA[-1]
 
     def roc(self, close):
-        return momentum.roc(close)
+        return talib.stream_ROCP(close)
 
     def balance_of_power(self, open, high, low, close):
         bop = self.pandas_ind.bop(open, high, low, close)
         return bop
 
-    def adx(self, high, low, close, timeperiod=14):
-        adx = pandas_ta.adx(high, low, close)
+    def adx(self, high, low, close, window=14):
+        adx = pandas_ta.adx(high, low, close, length=window)
         return adx
+
+    def volume_spike_detect(self, volume_array, info=None, window=26):
+        volume_ma = self.moving_average(df=volume_array, n=window)
+        last_value = volume_array[-1]
+        if last_value > volume_ma * 2:
+            cp.alert(f'[~] Volume spike on {info}')
+            return True
+        return False
+
+
 
     def exponential_moving_average(self, df, n):
         """
@@ -435,8 +460,8 @@ class Strategy:
         else:
             return crosses[-1:], -1
 
-    def generate_rsi(self, close_array):
-        rsi = indicators.relative_strength_index(close_array, n=14)
+    def generate_rsi(self, close_array, window=14):
+        rsi = indicators.relative_strength_index(close_array, n=window)
         if rsi:
             return rsi
 
@@ -459,7 +484,8 @@ class Strategy:
         close_array_ = pd.Series(close_array)
         new_time = [datetime.datetime.fromtimestamp(time / 1000) for time in open_time]
 
-        return open_array_, close_array_, high_array_, low_array_, open_array, close_array, high_array, low_array, volume_array, new_time
+        return open_array_, close_array_, high_array_, low_array_, open_array, close_array, high_array, low_array, \
+               volume_array, new_time
 
     def query_ohlc(self, symbol, period, closed=True):
         """
@@ -594,6 +620,7 @@ class Strategy:
             return 0
 
     def run_indicators(self, _period, market):
+        vol_spike = False
         """
         Turn FTX intervals into human friendly time periods
         """
@@ -616,6 +643,10 @@ class Strategy:
         adx_val = self.adx(high_array_, low_array_, close_array_)
         # print(pd.DataFrame.from_dict(adx_val[:1500]).values.tolist())
         adx_val = pd.DataFrame.from_dict(adx_val[:500]).values.tolist()[499][0]
+        #if s.roc_periods.__contains__(_period):
+        roc = self.roc(close_array_)
+        vroc = self.roc(volume_array)
+        print(f'ROC: {roc}, VROC: {vroc}')
         """roc_val = self.roc(close_array_)
         if roc_val >= .5:
             pl = {'market': market, 'roc': roc_val}
@@ -633,12 +664,15 @@ class Strategy:
         ema_long = self.exponential_moving_average(close_array, n=26)
         ema_short = self.exponential_moving_average(close_array, n=9)
         self.cp.white(f'[⚂] EMA: {ema_long}, {ema_short}')
+        if s.volume_spike_periods.__contains__(_period):
+            print(f'Checking {market}_{_period} for volume spike')
+            vol_spike = self.volume_spike_detect(volume_array, info=f'{market}_{_period}', window=50)
 
-        return rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short
+        return rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short, vol_spike
 
     def score(self, _period, market):
 
-        rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short = self.run_indicators(_period, market)
+        rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short, vol_spike = self.run_indicators(_period, market)
         score = 0
         if rogo == 1:
             score += 1
@@ -661,7 +695,7 @@ class Strategy:
             score -= 1
 
         self.cp.red(f'[⋄] Analysis on {market} for {_period}:, {score}, {adx_val}')
-        return score, adx_val, sar
+        return score, adx_val, sar, vol_spike
 
     def calculate_score(self, market):
         sars = {}
@@ -676,20 +710,22 @@ class Strategy:
         adx_max = 0
         # print(f'We have {len(self.indicators)} indicators ')
         # sars = []
+        events = []
         for x, period in enumerate(self.periods):
             score_ = 0
+
             psecs = period_mapper(p_string=period)
             # print(x, psecs)
 
             p += 1
 
-            score, adx, sar = self.score(period, market)
+            score, adx, sar, vol_spike = self.score(period, market)
             sars[x] = sar
 
             # if p <= len(self.periods) - 1:
-                # print('Period', p)
-                #if adx <= 20:
-                #    return 'NEUTRAL', 0, 0
+            # print('Period', p)
+            # if adx <= 20:
+            #    return 'NEUTRAL', 0, 0
 
             # score_ = score * psecs
             total_score += score
@@ -702,6 +738,8 @@ class Strategy:
             highest_score += (psecs * len(self.indicators))
             weighted_score += (score * psecs)
             self.cp.yellow(f'[⋄] Weighted Score: {period}:{psecs}: {weighted_score}')
+            if vol_spike:
+                events.append(f'Volume spike: {period}_{market}')
         # weighted_score = weighted_score / len(self.periods)
         score_pct = self.percent(weighted_score, highest_score)
         adx_avg = self.percent(adx_mean, adx_max)
@@ -725,13 +763,13 @@ class Strategy:
         elif weighted_score == 0:
             analysis = 'NEUTRAL'
         if analysis == 'LONG':
-            self.cp.green(f'🔺 Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
+            self.cp.green(f'[🔺] Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
         elif analysis == 'SHORT':
-            self.cp.red(f'🔻 Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
+            self.cp.red(f'[🔻] Finished: score: {analysis}, Percent: {score_pct}, ADX: {adx_mean}')
         else:
-            self.cp.yellow(f'🔸 Finished: score: {analysis}')
+            self.cp.yellow(f'[🔸] Finished: score: {analysis}')
             score_pct = 0
-        self.forward_tester(signal=analysis, market=market, score=score_pct, adx_avg=adx_avg)
+        self.forward_tester(signal=analysis, market=market, score=score_pct, adx_avg=adx_avg, events=events)
         score_pct = round(score_pct, 2)
         adx_avg = round(adx_avg, 2)
         return analysis, score_pct, adx_avg
@@ -751,7 +789,7 @@ def interactive():
     strategy = Strategy(markets, periods=['1m', '5m', '30m', '1h', '4h', '6h', '12h'], quiet=args.quiet)
     while 1:
         for m in strategy.markets:
-            signal_, score = strategy.calculate_score(m)
+            strategy.calculate_score(m)
 
 
 def main(args):
@@ -769,6 +807,9 @@ def main(args):
     # state = State()
     cp = ColorPrint()
     cp.white('[💰] Lets find some unicorns!')
+    cp.yellow('[~] Will search for Volume Spike Events on : ')
+    print(s.volume_spike_periods)
+    cp.yellow(f'[~] Min score to broadcast: {s.min_score}, Min ADX: {s.min_adx} ')
     # market = sys.argv[1]
     # print('Market', market)
 
@@ -776,12 +817,16 @@ def main(args):
         periods = ['1m', '3m']
     else:
         if not args.custom_tfs:
+            if args.mode == 'microscalp':
+                periods = ['1m', '3m', '5m']
             if args.mode == 'scalp':
                 periods = ['1m', '3m', '5m', '15m', '30m']
             elif args.mode == 'standard':
                 periods = ['1m', '5m', '15m', '30m', '1h', '2h']
             elif args.mode == 'precise':
                 periods = ['1m', '5m', '15m', '1h', '4h', '12h']
+            elif args.mode == 'longtrends':
+                periods = ['3d', '1d', '6h', '2h', '30m']
         else:
             periods = args.custom_tfs
 
@@ -831,13 +876,18 @@ if __name__ == '__main__':
     args.add_argument('-q', '--quiet', dest='quiet', action='store_true')
     args.add_argument('-m', '--mode', dest='mode', choices=['scalp', 'standard', 'precise'], default='standard',
                       help='Period settings')
-    args.add_argument('-ms', '-min_score', dest='min_score', type=float, default=0.0, help='If set, only broadcast if '
-                                                                                           'score is at least this.')
+    args.add_argument('-ms', '-minscore', dest='min_score', type=float, default=30, help='If set, only broadcast if '
+                                                                                         'score is at least this.')
+    args.add_argument('-ma', '--minadx', dest='min_adx', type=float, default=20, help='Filter out adx lt value')
     args.add_argument('-r', '--reverse', dest='reverse', action='store_true', help='Get lowest volume markets.')
     args.add_argument('-s', '--single', dest='single', default=0)
     args.add_argument('-S', '--shard_from', dest='shard', type=int, default=0)
     args.add_argument('-H', '--host', default='localhost', type=str)
     args.add_argument('-t', '--timeframes', dest='custom_tfs', type=str, nargs='+', help='Custom timeframes')
+    args.add_argument('-sd', '--spikedetect', dest='spike_detect', type=str, nargs='+', help='Detect volume spikes'
+                                                                                             'on these timeframes.')
+    #args.add_argument('-rv', '--roc_periods', dest='roc_periods', default=None, type=str, nargs='+',
+    #                  help='Monitor for roc/vroc increases')
     args = args.parse_args()
 
     print('Start High Bandwidth Market Analyser')
@@ -846,6 +896,12 @@ if __name__ == '__main__':
     mq = MqSkel(host=args.host, port=1883)
     if args.min_score != 0:
         s.min_score = args.min_score
+    if args.min_adx != 0:
+        s.min_adx = args.min_adx
+    #if args.roc_periods:
+    #    s.roc_periods = args.roc_periods
+    if args.spike_detect:
+        s.volume_spike_periods = args.spike_detect
     while True:
         try:
             # mq.mqStart()

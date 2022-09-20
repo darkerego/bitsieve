@@ -69,6 +69,9 @@ Upon identifying a signal, a json object is broadcasting over mqtt to the topics
   "Highest_PNL": 0.339579164392702,
   "Lowest_PNL": -0.1819174094960822,
   "Live_score": 40
+  "Events": ["Volume spike: 5m_LTCUSDT"]
+}
+
 
 
 </pre>
@@ -91,10 +94,30 @@ six hours later. Currently, if you are using patterns then you may want to perio
 that effect. 
 </p>
 
+### Volume Spike Detection
+<p>
+A new feature I am testing is volume spike detection. This is calculated by taking the moving average of the 
+volume for each candle and comparing it with the last closed candles value (in the future I want to also 
+check open candles. but nobody seems to be able to tell me how to do this *). If the last value > moving average * 2, 
+consider this a spike. Volume spikes will be reported in the `Events` field of the mqtt messages.
+</p>
+<p>
+To check period 15m for volume spikes:
+</p>
+<pre>
+$ ./engine.py -sd 15m
+</pre>
+
+<p>
+* Footnote on open candles:
+
+[Can I Analyse the Open Candles?](https://stackoverflow.com/questions/71811026/using-binance-websockets-with-ta-lib-can-i-analyse-the-open-candles)
+</p>
+
 ### Usage 
 
 <pre>
-usage: engine.py [-h] [-d] [-q] [-m {scalp,standard,precise}] [-t TIMEFRAMES [TIMEFRAMES ...]] [-p PATTERNS_ON [PATTERNS_ON ...]] [-fp FIB_RES] [-ms MIN_SCORE] [-ma MIN_ADX] [-r] [-s SINGLE] [-S SHARD] [-H HOST]
+usage: engine.py [-h] [-d] [-q] [-m {scalp,standard,precise}] [-ms MIN_SCORE] [-ma MIN_ADX] [-r] [-s SINGLE] [-S SHARD] [-H HOST] [-t CUSTOM_TFS [CUSTOM_TFS ...]] [-sd SPIKE_DETECT [SPIKE_DETECT ...]]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -102,18 +125,19 @@ optional arguments:
   -q, --quiet
   -m {scalp,standard,precise}, --mode {scalp,standard,precise}
                         Period settings
-  -t TIMEFRAMES [TIMEFRAMES ...], --timeframes TIMEFRAMES [TIMEFRAMES ...]
-  -p PATTERNS_ON [PATTERNS_ON ...], --pattern PATTERNS_ON [PATTERNS_ON ...]
-  -fp FIB_RES, --fib_res FIB_RES
-                        The resolution to calculate fib retrace levels for. Default is the longest period of timeframes.
-  -ms MIN_SCORE, -min_score MIN_SCORE
+  -ms MIN_SCORE, -minscore MIN_SCORE
                         If set, only broadcast if score is at least this.
-  -ma MIN_ADX, --min_adx MIN_ADX
-                        Min average adx
+  -ma MIN_ADX, --minadx MIN_ADX
+                        Filter out adx lt value
   -r, --reverse         Get lowest volume markets.
   -s SINGLE, --single SINGLE
   -S SHARD, --shard_from SHARD
   -H HOST, --host HOST
+  -t CUSTOM_TFS [CUSTOM_TFS ...], --timeframes CUSTOM_TFS [CUSTOM_TFS ...]
+                        Custom timeframes
+  -sd SPIKE_DETECT [SPIKE_DETECT ...], --spikedetect SPIKE_DETECT [SPIKE_DETECT ...]
+                        Detect volume spikeson these timeframes.
+
 
 </pre>
 
@@ -178,5 +202,8 @@ exchange will simply take it all.
 Find this useful? Consider supporting development: </b><br>
 BTC:3KD3sKiGSyipijVVJ8jVyLYeRDkkTKzKct<br>
 ETH:0x0f7274f04d47c5A7cd08AF848e809396ef6B08A5<br>
+
+Want to hire me? Contact info available on [linkedin](https://www.linkedin.com/in/chev-young-7a22ba152?lipi=urn%3Ali%3Apage%3Ad_flagship3_profile_view_base_contact_details%3Bdsq11bKxQ0uVwSRiLIH5Zg%3D%3D).
+
 
 </p>
