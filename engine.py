@@ -789,7 +789,7 @@ class Strategy:
 
 def interactive():
     cp = ColorPrint()
-    cp.white('[⋄] This shit is fucking ridiculous!')
+    cp.white('[⋄] This s*** is ridiculous!')
     markets = market_enumeration.InteractiveArgs()
     markets = markets.interactive_calL()
     strategy = Strategy(markets, periods=['1m', '5m', '30m', '1h', '4h', '6h', '12h'], quiet=args.quiet)
@@ -873,6 +873,15 @@ def main(args):
                     if not args.quiet:
                         cp.red(f'[~] {signal_}, {score}, {m}')
                     sleep(0.125)
+def parse_uri(uri):
+    try:
+        host = uri.split(':')[0]
+        port = args.uri.split(':')[1]
+    except IndexError:
+        cp.red('[!] Error parsing uri: "{uri}, format is incorrect!"')
+    else:
+        return host, port
+
 
 
 if __name__ == '__main__':
@@ -888,7 +897,7 @@ if __name__ == '__main__':
     args.add_argument('-r', '--reverse', dest='reverse', action='store_true', help='Get lowest volume markets.')
     args.add_argument('-s', '--single', dest='single', default=0)
     args.add_argument('-S', '--shard_from', dest='shard', type=int, default=0)
-    args.add_argument('-H', '--host', default='localhost', type=str)
+    args.add_argument('-u', '--uri', default='localhost:1883', type=str, help='MqTT server in host:port format.')
     args.add_argument('-t', '--timeframes', dest='custom_tfs', type=str, nargs='+', help='Custom timeframes')
     args.add_argument('-sd', '--spikedetect', dest='spike_detect', type=str, nargs='+', help='Detect volume spikes'
                                                                                              'on these timeframes.')
@@ -896,9 +905,10 @@ if __name__ == '__main__':
     #                  help='Monitor for roc/vroc increases')
     args = args.parse_args()
 
-    print('Start High Bandwidth Market Analyser')
+    cp.white_black('[x] BitSeive -- a High Bandwidth Market Analyser')
     restarts = 1
     s = Settings()
+    host, port = parse_uri(args.uri)
     mq = MqSkel(host=args.host, port=1883)
     if args.min_score != 0:
         s.min_score = args.min_score
