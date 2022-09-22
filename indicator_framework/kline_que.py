@@ -3,10 +3,10 @@ class KlineQue:
         print(f'Init {symbol_tf}')
         self.symbol_tf = symbol_tf
         self.closed_candles = {}
-        self.open_candles = {}
+        self.open_candle = None
         self.closed_candles_list = []
-        self.open_candles_list = []
-        self.open_list_copy = []
+        #self.open_candles_list = []
+        #self.open_list_copy = []
         self.closed_list_copy = []
         self.is_initialized = False
 
@@ -25,9 +25,9 @@ class KlineQue:
         if len(self.closed_candles_list) > 2000:
             ccl = self.closed_candles_list.copy()
             self.closed_candles_list = ccl[-2000:]
-        if len(self.open_candles_list) > 2000:
-            ocl = self.open_candles_list.copy()
-            self.open_candles_list = ocl[-2000:]
+        #if len(self.open_candles_list) > 2000:
+        #    ocl = self.open_candles_list.copy()
+        #    self.open_candles_list = ocl[-2000:]
         last_ct = float(self.closed_candles_list[-1].get('kline').get('close_time'))
         this_ct = float(kline.get('kline').get('close_time'))
         if this_ct > last_ct:
@@ -35,7 +35,7 @@ class KlineQue:
                 print(f'New Closed Candle: for {symbol_tf}\n{kline}')
                 self.closed_candles_list.append(kline)
             else:
-                self.open_candles_list.append(kline)
+                self.open_candle = kline
 
     def next(self, closed=True):
         if closed:
@@ -44,14 +44,16 @@ class KlineQue:
             except IndexError:
                 return None
         else:
-            try:
-                return self.open_list_copy.pop()[0]
-            except IndexError:
-                return None
+            if self.open_candle is not None:
+                return self.open_candle
+            return False
 
     def get(self, closed=True, history=500):
         # print(len(self.closed_candles_list))
         if closed:
             if len(self.closed_candles_list):
                 return self.closed_candles_list[-history:]
+        if self.open_candle is not None:
+            return self.open_candle
+        return False
 

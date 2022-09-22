@@ -45,8 +45,7 @@ class Settings:
     roc_periods = []
     volume_spike_periods = []
     debug = False
-    ema_cross_1 = [26, 9]
-    ema_cross_2 = [200, 50]
+    ema_windows = [(26, 9), (200, 50)]
     vsd_window = 26
     adx_window = 14
 
@@ -396,11 +395,16 @@ class Strategy:
         adx = pandas_ta.adx(high, low, close, length=window)
         return adx
 
-    def volume_spike_detect(self, volume_array, info=None, window=26):
+    def volume_spike_detect(self, volume_array, symbol, interval, window=26):
+        kline_que_name = f'{symbol}_{interval}'
         volume_ma = self.moving_average(df=volume_array, n=window)
-        last_value = volume_array[-1]
-        if last_value > volume_ma * 2:
-            cp.alert(f'[~] Volume spike on {info}')
+        current_open_candle_volume = self.query_ohlc(symbol, interval, False)
+        #if current_open_candle_volume:
+        #    current_val = current_open_candle_volume.get('kline').get('base_volume')
+        #else:
+        current_val = volume_array[-1]
+        if current_val > volume_ma * 2:
+            cp.alert(f'[~] Volume spike on {kline_que_name}')
             return True
         return False
 
@@ -499,6 +503,8 @@ class Strategy:
         # kline_que_name = f'{symbol}_{period}'
         c = 0
         # print(klines.keys())
+        if not closed:
+            return klines.get(kline_que_name).get(closed=False)
 
         if klines.get(kline_que_name):
             success = True
@@ -666,7 +672,7 @@ class Strategy:
         self.cp.white(f'[⚂] EMA: {ema_long}, {ema_short}')
         if s.volume_spike_periods.__contains__(_period):
             print(f'Checking {market}_{_period} for volume spike')
-            vol_spike = self.volume_spike_detect(volume_array, info=f'{market}_{_period}', window=50)
+            vol_spike = self.volume_spike_detect(volume_array, symbol=market, interval=_period, window=26)
 
         return rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short, vol_spike
 
