@@ -48,29 +48,32 @@ Upon identifying a signal, a json object is broadcasting over mqtt to the topics
 <pre>
 {
   "Signal": "LONG",
-  "Status": "closed",
-  "Instrument": "MATICUSDT",
-  "Score": 40,
-  "Mean_Adx": 21.62,
-  "Patterns": [],
+  "Status": "open",
+  "Instrument": "EOSUSDT",
+  "Score": 70.37037037037037,
+  "Live_score": 56.48148148148148,
+  "Mean_Adx": 25.24832970999006,
   "Periods": [
     "1m",
+    "3m",
     "5m",
     "15m",
-    "30m",
-    "1h",
-    "2h"
+    "30m"
   ],
-  "Open_time": "2022-09-06 17:39:24.006360",
-  "Entry": 0.82455,
-  "Exit": 0.82425,
-  "Closed_at": "2022-09-06 17:51:16.811772",
-  "PNL": 0.06063913649868958,
-  "Highest_PNL": 0.339579164392702,
-  "Lowest_PNL": -0.1819174094960822,
-  "Live_score": 40
-  "Events": ["Volume spike: 5m_LTCUSDT"]
+  "Open_time": "2022-09-25 00:42:28.034579",
+  "Entry": 1.2115,
+  "Exit": 0,
+  "Closed_at": 0,
+  "PNL": 0.08254230293024266,
+  "Highest_PNL": 0.08254230293024266,
+  "Lowest_PNL": -0.33016921172100727,
+  "Events": [
+    "Volume spike: 5.0x 1m_EOSUSDT",
+    "Volume spike: 8.0x 3m_EOSUSDT",
+    "Volume spike: 4.0x 5m_EOSUSDT"
+  ]
 }
+
 
 
 
@@ -98,8 +101,9 @@ that effect.
 <p>
 A new feature I am testing is volume spike detection. This is calculated by taking the moving average of the 
 volume for each candle and comparing it with the last closed candles value (in the future I want to also 
-check open candles. but nobody seems to be able to tell me how to do this *). If the last value > moving average * 2, 
-consider this a spike. Volume spikes will be reported in the `Events` field of the mqtt messages.
+check open candles. but nobody seems to be able to tell me how to do this *). If the last value > moving average *2, 
+consider this a spike and report by how many magnitudes more than the 200 period moving average is volume is. Volume 
+spikes will be reported in the `Events` field of the mqtt messages.
 </p>
 <p>
 To check period 15m for volume spikes:

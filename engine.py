@@ -44,21 +44,23 @@ class Settings:
     min_adx = 20
     roc_periods = []
     volume_spike_periods = []
+    volume_spike_multiplier = 1
     debug = False
     ema_windows = [(26, 9), (200, 50)]
     vsd_window = 26
     adx_window = 14
+    pattern_detect = []
+    min_pattern_rating = 50
 
 
-
-logging.basicConfig(
+"""logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler("debug.log"),
         # logging.StreamHandler()
     ]
-)
+)"""
 
 
 def lopic_log(data):
@@ -130,7 +132,7 @@ class CurrentSig:
 
         self.publish(topic=f'/signals')
         self.publish(topic=f'/stream')
-        self.record_sql(self.Current_analysis)
+        # self.record_sql(self.Current_analysis)
 
     def close(self, exit_price, pnl, status='closed'):
         """
@@ -146,7 +148,7 @@ class CurrentSig:
         self.Current_analysis.update({'Status': 'closed'})
         self.Current_analysis.update({'Closed_at': datetime.datetime.now()})
         self.Current_analysis.update({'PNL': f'{pnl}%'})
-        self.record_sql(self.Current_analysis)
+        # self.record_sql(self.Current_analysis)
         if self.publish(topic=f'/signals') and self.publish(topic=f'/stream'):
             return True
 
@@ -319,6 +321,8 @@ class Strategy:
                 return _
 
     def future_ticker(self, instrument):
+        if args.debug or args.verbosity > - 3:
+            print(f'Getting ticker for {instrument}')
         """
         Websocket ticker
         :param instrument: market to query
@@ -327,9 +331,9 @@ class Strategy:
         t = TickerQue.tickers.get(instrument)
         self._print(t)
         if t is None:
-            ret = self.binance_ticker_rest_fallback(instrument=instrument)
-            if ret:
-                return float(ret.get('lastPrice'))
+            _ret = self.binance_ticker_rest_fallback(instrument=instrument)
+            if _ret is not None:
+                return float(_ret.get('price'))
         else:
             return float(t.get('price'))
 
@@ -396,19 +400,17 @@ class Strategy:
         return adx
 
     def volume_spike_detect(self, volume_array, symbol, interval, window=26):
+        # TODO: open candles
         kline_que_name = f'{symbol}_{interval}'
+        #volume_ma =
         volume_ma = self.moving_average(df=volume_array, n=window)
-        current_open_candle_volume = self.query_ohlc(symbol, interval, False)
-        #if current_open_candle_volume:
-        #    current_val = current_open_candle_volume.get('kline').get('base_volume')
-        #else:
+
         current_val = volume_array[-1]
         if current_val > volume_ma * 2:
-            cp.alert(f'[~] Volume spike on {kline_que_name}')
-            return True
+            mult = divmod(current_val, volume_ma)[0]
+            cp.alert(f'[~] Volume spike {mult}x average on {kline_que_name}')
+            return mult
         return False
-
-
 
     def exponential_moving_average(self, df, n):
         """
@@ -419,6 +421,7 @@ class Strategy:
         EMA = talib.EMA(df, timeperiod=n)
         # print(EMA)
         return EMA[-1]
+
 
     def generate_sar(self, high_array, low_array, acceleration=np.asarray([0.02]), maximum=np.asarray([0.2]),
                      market='BTCUSDT'):
@@ -503,16 +506,17 @@ class Strategy:
         # kline_que_name = f'{symbol}_{period}'
         c = 0
         # print(klines.keys())
-        if not closed:
-            return klines.get(kline_que_name).get(closed=False)
 
         if klines.get(kline_que_name):
             success = True
         else:
             # print(f'Not present .. {kline_que_name}')
+
             return self.aggravate(symbol, period)
 
         if success:
+            if not closed:
+                return klines.get(kline_que_name).get(closed=False)
 
             # print(klines)
             klines_ = klines[kline_que_name].get(closed=True)
@@ -649,7 +653,7 @@ class Strategy:
         adx_val = self.adx(high_array_, low_array_, close_array_)
         # print(pd.DataFrame.from_dict(adx_val[:1500]).values.tolist())
         adx_val = pd.DataFrame.from_dict(adx_val[:500]).values.tolist()[499][0]
-        #if s.roc_periods.__contains__(_period):
+        # if s.roc_periods.__contains__(_period):
         roc = self.roc(close_array_)
         vroc = self.roc(volume_array)
         print(f'ROC: {roc}, VROC: {vroc}')
@@ -664,7 +668,7 @@ class Strategy:
         sar = self.generate_sar(high_array, low_array, market=market)
         self._print(f'[⚂] SAR {sar}')
         if not sar:
-            return 0, 0, 0
+            return 0, 0, 0, 0
         rsi = self.generate_rsi(close_array=close_array_)
         self._print(f'[⚂] RSI: {rsi}')
         ema_long = self.exponential_moving_average(close_array, n=26)
@@ -672,7 +676,7 @@ class Strategy:
         self.cp.white(f'[⚂] EMA: {ema_long}, {ema_short}')
         if s.volume_spike_periods.__contains__(_period):
             print(f'Checking {market}_{_period} for volume spike')
-            vol_spike = self.volume_spike_detect(volume_array, symbol=market, interval=_period, window=26)
+            vol_spike = self.volume_spike_detect(volume_array, symbol=market, interval=_period, window=200)
 
         return rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short, vol_spike
 
@@ -690,7 +694,7 @@ class Strategy:
         elif sar[0] and sar[0] == -1:
             score -= 1
         else:
-            return 0, 0, (0, 0, 0)
+            return 0, 0, (0, 0, 0), 0
         if rsi > 70:
             score -= 1
         elif rsi > 0 < 30:
@@ -745,7 +749,7 @@ class Strategy:
             weighted_score += (score * psecs)
             self.cp.yellow(f'[⋄] Weighted Score: {period}:{psecs}: {weighted_score}')
             if vol_spike:
-                events.append(f'Volume spike: {period}_{market}')
+                events.append(f'Volume spike: {vol_spike}x {period}_{market}')
         # weighted_score = weighted_score / len(self.periods)
         score_pct = self.percent(weighted_score, highest_score)
         adx_avg = self.percent(adx_mean, adx_max)
@@ -782,8 +786,9 @@ class Strategy:
 
     def simulate_score(self, market):
         score = random.randrange(1, 100, 2)
+        adx = random.randrange(1, 100, 2)
         analysis = random.choice(['LONG', 'SHORT', 'NEUTRAL'])
-        self.forward_tester(signal=analysis, market=market, score=score)
+        self.forward_tester(signal=analysis, market=market, score=score, adx_avg=adx)
         return analysis, score
 
 
@@ -819,22 +824,22 @@ def main(args):
     # market = sys.argv[1]
     # print('Market', market)
 
-    if args.debug:
-        periods = ['1m', '3m']
+    # if args.debug:
+    #    periods = ['1m', '3m']
+
+    if not args.custom_tfs:
+        if args.mode == 'microscalp':
+            periods = ['1m', '3m', '5m']
+        if args.mode == 'scalp':
+            periods = ['1m', '3m', '5m', '15m', '30m']
+        elif args.mode == 'standard':
+            periods = ['1m', '5m', '15m', '30m', '1h', '2h']
+        elif args.mode == 'precise':
+            periods = ['1m', '5m', '15m', '1h', '4h', '12h']
+        elif args.mode == 'longtrends':
+            periods = ['3d', '1d', '6h', '2h', '30m']
     else:
-        if not args.custom_tfs:
-            if args.mode == 'microscalp':
-                periods = ['1m', '3m', '5m']
-            if args.mode == 'scalp':
-                periods = ['1m', '3m', '5m', '15m', '30m']
-            elif args.mode == 'standard':
-                periods = ['1m', '5m', '15m', '30m', '1h', '2h']
-            elif args.mode == 'precise':
-                periods = ['1m', '5m', '15m', '1h', '4h', '12h']
-            elif args.mode == 'longtrends':
-                periods = ['3d', '1d', '6h', '2h', '30m']
-        else:
-            periods = args.custom_tfs
+        periods = args.custom_tfs
 
     """supported binance periods:
     1m,3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M"""
@@ -861,8 +866,8 @@ def main(args):
 
         for m in state.markets:
             if args.debug:
-                signal_, score = strategy.simulate_score(m)
-                cp.red(f'{signal_}, {score}, {m}')
+                signal_, score, _adx = strategy.calculate_score(m)
+                cp.red(f'{signal_}, {score}, {_adx}')
                 sleep(1)
             else:
                 try:
@@ -873,6 +878,8 @@ def main(args):
                     if not args.quiet:
                         cp.red(f'[~] {signal_}, {score}, {m}')
                     sleep(0.125)
+
+
 def parse_uri(uri):
     try:
         host = uri.split(':')[0]
@@ -881,7 +888,6 @@ def parse_uri(uri):
         cp.red('[!] Error parsing uri: "{uri}, format is incorrect!"')
     else:
         return host, port
-
 
 
 if __name__ == '__main__':
@@ -901,7 +907,13 @@ if __name__ == '__main__':
     args.add_argument('-t', '--timeframes', dest='custom_tfs', type=str, nargs='+', help='Custom timeframes')
     args.add_argument('-sd', '--spikedetect', dest='spike_detect', type=str, nargs='+', help='Detect volume spikes'
                                                                                              'on these timeframes.')
-    #args.add_argument('-rv', '--roc_periods', dest='roc_periods', default=None, type=str, nargs='+',
+    #args.add_argument('-p', '--patterns', dest='pattern_detection', type=str, nargs='+', help='Detect candlestick '
+    #                                                                                          'patterns on these '
+    #                                                                                          'timeframes.')
+    args.add_argument('-mp', '--min_pattern_rating', dest='min_pattern_rating', type=int, default=50,
+                      help='Minimum pattern rating to report.')
+    args.add_argument('-v', '--verbosity', action='count', default=0)
+    # args.add_argument('-rv', '--roc_periods', dest='roc_periods', default=None, type=str, nargs='+',
     #                  help='Monitor for roc/vroc increases')
     args = args.parse_args()
 
@@ -909,15 +921,20 @@ if __name__ == '__main__':
     restarts = 1
     s = Settings()
     host, port = parse_uri(args.uri)
-    mq = MqSkel(host=args.host, port=1883)
+    mq = MqSkel(host=host, port=int(port))
     if args.min_score != 0:
         s.min_score = args.min_score
     if args.min_adx != 0:
         s.min_adx = args.min_adx
-    #if args.roc_periods:
+    # if args.roc_periods:
     #    s.roc_periods = args.roc_periods
     if args.spike_detect:
         s.volume_spike_periods = args.spike_detect
+
+    #if args.pattern_detection:
+    #    s.pattern_detect = args.pattern_detection
+    #    s.min_pattern_rating = args.min_pattern_rating
+
     while True:
         try:
             # mq.mqStart()
