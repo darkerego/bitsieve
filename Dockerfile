@@ -6,7 +6,7 @@ RUN apt -y install python3 build-essential build-essential zlib1g-dev libncurses
 RUN wget https://www.python.org/ftp/python/3.8.12/Python-3.8.12.tar.xz
 RUN tar -xf Python-3.8.12.tar.xz
 #RUN mv Python3.8.12 /opt/Python3.8.12
-RUN cd /opt/Python3.8.12/
+RUN cd /opt/Python-3.8.12/
 RUN ./configure --enable-optimizations --enable-shared
 RUN make
 RUN make install

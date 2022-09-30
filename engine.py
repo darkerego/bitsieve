@@ -248,6 +248,7 @@ class Strategy:
         self.cp = ColorPrint(quiet=self.quiet)
         # self.sig = CurrentSig()
         self.pandas_ind = PandasIndicators()
+        self.percent_per_second_dict = {}
         # self.sql = sql_lib.SQLLiteConnection()
 
     def forward_tester(self, signal, market, score, adx_avg, events=[]):
@@ -471,6 +472,9 @@ class Strategy:
         rsi = indicators.relative_strength_index(close_array, n=window)
         if rsi:
             return rsi
+
+    def percent_per_second(self, market):
+        pass
 
     def parse_candle(self, candle, kline_que_name, series):
         open_time = candle.get(kline_que_name).get('kline').get('open_time')
