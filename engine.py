@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.8
 import argparse
 import datetime
+import decimal
 import json
 import logging
 import math
@@ -43,6 +44,7 @@ class Settings:
     min_score = 30
     min_adx = 20
     roc_periods = []
+    volume_window = 200
     volume_spike_periods = []
     volume_spike_multiplier = 1
     debug = False
@@ -53,14 +55,14 @@ class Settings:
     min_pattern_rating = 50
 
 
-"""logging.basicConfig(
+logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler("debug.log"),
         # logging.StreamHandler()
     ]
-)"""
+)
 
 
 def lopic_log(data):
@@ -88,13 +90,14 @@ class BadReversal:
 
 class CurrentSig:
 
-    def __init__(self, instrument, signal, score, entry=None, _exit=None, adx_avg=0, periods=[], events=[]):
+    def __init__(self, instrument, signal, score, entry=None, _exit=None, adx_avg=0, periods=[], events=[], spread=0.0):
         self.Lowest_pnl = None
         self.logger = logging.getLogger(__name__)
         self.sql = sql_lib.SQLLiteConnection(dbname='kline.sqlite')
         self.Instrument = instrument
         self.Signal = signal
         self.Score = score
+        self.spread = spread
         self.Open_time = 0
         self.Closed_at = 0
         self.Exit = 0
@@ -123,12 +126,14 @@ class CurrentSig:
         self.Entry = entry
         self.Highest_PNL = 0.0
         self.Lowest_PNL = 0.0
+        self.spread = 0.0
         self.Status = 'open'
         self.Current_analysis = {'Signal': self.Signal, 'Status': self.Status, 'Instrument': self.Instrument,
                                  'Score': self.Score, 'Live_score': self.Live_score, 'Mean_Adx': self.adx_avg,
                                  'Periods': self.periods, 'Open_time': self.Open_time, 'Entry': self.Entry,
                                  'Exit': self.Exit, 'Closed_at': self.Closed_at, 'PNL': self.Pnl,
-                                 'Highest_PNL': self.Highest_PNL, 'Lowest_PNL': self.Lowest_PNL, 'Events': self.Events}
+                                 'Highest_PNL': self.Highest_PNL, 'Lowest_PNL': self.Lowest_PNL, 'Events': self.Events,
+                                 'Spread': self.spread}
 
         self.publish(topic=f'/signals')
         self.publish(topic=f'/stream')
@@ -175,11 +180,12 @@ class CurrentSig:
     def update_fields(self, field, data):
         self.Current_analysis.update({field: data})
 
-    def update_pnl(self, pnl, score, adx_avg, events):
+    def update_pnl(self, pnl, score, adx_avg, events, spread):
         self.Current_analysis.update({"PNL": pnl})
         self.Current_analysis.update({'Live_score': score})
         self.Current_analysis.update({'Mean_Adx': adx_avg})
         self.Current_analysis.update({'Events': events})
+        self.Current_analysis.update({'Spread': spread})
         if pnl > self.Highest_PNL:
             self.Highest_PNL = pnl
             self.Current_analysis.update({'Highest_PNL': self.Highest_PNL})
@@ -201,6 +207,7 @@ class CurrentSig:
                      'Score': round(float(self.Score), 2),
                      'Live_score': round(float(self.Live_score), 2),
                      'Mean_Adx': round(float(self.adx_avg), 2),
+                     'Spread': round(float(self.spread), 2),
                      'Periods': self.periods,
                      'Events': self.Events,
                      'Open_time': self.Open_time,
@@ -251,7 +258,7 @@ class Strategy:
         self.percent_per_second_dict = {}
         # self.sql = sql_lib.SQLLiteConnection()
 
-    def forward_tester(self, signal, market, score, adx_avg, events=[]):
+    def forward_tester(self, signal, market, score, adx_avg, events=[], spread=0.0):
         """
         {'signal': {'signal': 'NEUTRAL', 'status': None, 'instrument': None, 'open_time': 0.0, 'Entry': 0.0, 'Exit': 0.0, 'closed_at': 0.0}}
         """
@@ -276,7 +283,7 @@ class Strategy:
                     diff = diff * -1
             if last_sig.Signal == signal:
                 self.cp.white(f'[~] Current Ticker: {current}, Price at open: {last}, PNL if closed now: {diff} %')
-                last_sig.update_pnl(diff, score, adx_avg, events)
+                last_sig.update_pnl(diff, score, adx_avg, events, spread)
                 # print('Signal Open!')
             else:
                 # print('Signal Changed!')
@@ -285,7 +292,7 @@ class Strategy:
                     if last_sig.close(exit_price=current_tick, pnl=diff):
                         sig = CurrentSig(instrument=market, signal=signal, score=score,
                                          entry=self.future_ticker(instrument=market),
-                                         events=events)
+                                         events=events, spread=spread)
                         signal_que.update({market: {'object': sig, 'json': sig.Current_analysis}})
 
                 else:
@@ -293,7 +300,7 @@ class Strategy:
                     if last_sig.reverse(entry_price=current_tick, score=score, pnl=diff):
                         sig = CurrentSig(instrument=market, signal=signal, score=score,
                                          entry=self.future_ticker(instrument=market), periods=self.periods,
-                                         events=events)
+                                         events=events, spread=spread)
                         signal_que.update({market: {'object': sig, 'json': sig.Current_analysis}})
 
         else:
@@ -301,7 +308,7 @@ class Strategy:
             print('Initialize new signal ... ')
             sig = CurrentSig(instrument=market, signal=signal, score=score, adx_avg=adx_avg,
                              entry=self.future_ticker(instrument=market), periods=self.periods,
-                             events=events)
+                             events=events, spread=spread)
             signal_que.update({market: {'object': sig, 'json': sig.Current_analysis}})
 
             return
@@ -337,6 +344,17 @@ class Strategy:
                 return float(_ret.get('price'))
         else:
             return float(t.get('price'))
+
+
+    def spread_ticker(self, market):
+        _ret = TickerQue.tickers.get(market)
+        #self._print(t)
+        if _ret is None:
+            _ret = self.binance_ticker_rest_fallback(instrument=market)
+            #print('st', _ret)
+        if _ret:
+            return _ret.get('ask'), _ret.get('bid')
+        return 0,0
 
     def weighted_std(self, values, weights):
         sum_of_weights = np.sum(weights)
@@ -473,8 +491,24 @@ class Strategy:
         if rsi:
             return rsi
 
-    def percent_per_second(self, market):
-        pass
+    def roc_p(self, close_array):
+        return talib.stream_ROCP(close_array)
+
+    def spread(self, market):
+        a, b = self.spread_ticker(market)
+        print(a,b)
+        sp = 1-(a/b)
+        if sp < 0:
+            sp = sp * -1
+        return round(decimal.Decimal(sp), 6)
+        #return sp
+
+
+
+
+
+
+
 
     def parse_candle(self, candle, kline_que_name, series):
         open_time = candle.get(kline_que_name).get('kline').get('open_time')
@@ -634,6 +668,12 @@ class Strategy:
             return 0
 
     def run_indicators(self, _period, market):
+        def pct_last_candle(o,c):
+            #print(o,c)
+            last_candle_open = o[-1][-1]
+            last_candle_close = c[-1][-1]
+            print(last_candle_close, last_candle_open)
+            print(self.get_change(last_candle_open, last_candle_close))
         vol_spike = False
         """
         Turn FTX intervals into human friendly time periods
@@ -646,6 +686,9 @@ class Strategy:
         # open , close, high, low, open, close, high, low, volume, new_time
         open_array_, close_array_, high_array_, low_array_, open_array, close_array, high_array, low_array, \
         volume_array, new_time = self.query_ohlc(symbol=market, period=_period)
+        #print(open_array_, close_array_)
+        #self.pct_last_candle(open_array_, close_array_)
+
 
         # bop = self.balance_of_power()
         macdret, rogo = self.generate_macd(close_array, new_time)
@@ -678,9 +721,16 @@ class Strategy:
         ema_long = self.exponential_moving_average(close_array, n=26)
         ema_short = self.exponential_moving_average(close_array, n=9)
         self.cp.white(f'[⚂] EMA: {ema_long}, {ema_short}')
-        if s.volume_spike_periods.__contains__(_period):
-            print(f'Checking {market}_{_period} for volume spike')
-            vol_spike = self.volume_spike_detect(volume_array, symbol=market, interval=_period, window=200)
+        #if s.volume_spike_periods.__contains__(_period):
+        print(f'Checking {market}_{_period} for volume spike')
+        vol_spike = self.volume_spike_detect(volume_array, symbol=market, interval=_period, window=200)
+        rocr = self.roc_p(close_array)
+        print(f'ROCR100: {rocr}')
+        #if rocr > .1:
+        if vol_spike:
+            payload = json.dumps({'event': 'spike', 'instrument': market, "period": _period,
+                                  'details': {'VolumeX': float(vol_spike), 'ROC': round((rocr), 6)}})
+            mq.mqPublish(payload=payload, topic=f'/event')
 
         return rogo, bop_ret, adx_val, sar, rsi, ema_long, ema_short, vol_spike
 
@@ -783,7 +833,8 @@ class Strategy:
         else:
             self.cp.yellow(f'[🔸] Finished: score: {analysis}')
             score_pct = 0
-        self.forward_tester(signal=analysis, market=market, score=score_pct, adx_avg=adx_avg, events=events)
+        spread = self.spread(market)
+        self.forward_tester(signal=analysis, market=market, score=score_pct, adx_avg=adx_avg, events=events, spread=spread)
         score_pct = round(score_pct, 2)
         adx_avg = round(adx_avg, 2)
         return analysis, score_pct, adx_avg
@@ -909,11 +960,13 @@ if __name__ == '__main__':
     args.add_argument('-S', '--shard_from', dest='shard', type=int, default=0)
     args.add_argument('-u', '--uri', default='localhost:1883', type=str, help='MqTT server in host:port format.')
     args.add_argument('-t', '--timeframes', dest='custom_tfs', type=str, nargs='+', help='Custom timeframes')
-    args.add_argument('-sd', '--spikedetect', dest='spike_detect', type=str, nargs='+', help='Detect volume spikes'
-                                                                                             'on these timeframes.')
+    #args.add_argument('-sd', '--spikedetect', dest='spike_detect', type=str, nargs='+', help='Detect volume spikes'
+    #                                                                                         'on these timeframes.')
     #args.add_argument('-p', '--patterns', dest='pattern_detection', type=str, nargs='+', help='Detect candlestick '
     #                                                                                          'patterns on these '
     #                                                                                          'timeframes.')
+    args.add_argument('-vw', '--volume_window', dest='volume_window', type=int, default=200,
+                      help='The moving average window to use to calculate volume anomalies.')
     args.add_argument('-mp', '--min_pattern_rating', dest='min_pattern_rating', type=int, default=50,
                       help='Minimum pattern rating to report.')
     args.add_argument('-v', '--verbosity', action='count', default=0)
@@ -933,7 +986,7 @@ if __name__ == '__main__':
     # if args.roc_periods:
     #    s.roc_periods = args.roc_periods
     if args.spike_detect:
-        s.volume_spike_periods = args.spike_detect
+        s.volume_window = args.volume_window
 
     #if args.pattern_detection:
     #    s.pattern_detect = args.pattern_detection

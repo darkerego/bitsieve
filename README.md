@@ -106,12 +106,28 @@ consider this a spike and report by how many magnitudes more than the 200 period
 spikes will be reported in the `Events` field of the mqtt messages.
 </p>
 <p>
-To check period 15m for volume spikes:
+Now enabled by default. There is also now a seperate stream `/event` where you can see volume events. The rate of change 
+is also reported:
 </p>
 <pre>
-$ ./engine.py -sd 15m
-</pre>
+{
+  "event": "spike",
+  "instrument": "NEARUSDT",
+  "period": "1m",
+  "details": {
+    "VolumeX": 49,
+    "ROC": 0.0026
+  }
+}
 
+</pre>
+<p>
+This can be really awesome for scalping. Run a few instances of the engine using the shard feature. Grab a cup of coffee 
+and just sit and watch until you see a giant volume spike, like anything over 30x the moving average that also has a 
+high rate of change (i suppose you can define "high" as over 0.02) and then go scalping. Right after I implement this I 
+caught a sick near pump with a 49x spike!
+
+</p>
 <p>
 * Footnote on open candles:
 
