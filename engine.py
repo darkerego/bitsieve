@@ -985,8 +985,8 @@ if __name__ == '__main__':
         s.min_adx = args.min_adx
     # if args.roc_periods:
     #    s.roc_periods = args.roc_periods
-    if args.spike_detect:
-        s.volume_window = args.volume_window
+    #if args.spike_detect:
+    s.volume_window = args.volume_window
 
     #if args.pattern_detection:
     #    s.pattern_detect = args.pattern_detection
